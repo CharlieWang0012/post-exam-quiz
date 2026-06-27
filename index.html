@@ -98,6 +98,8 @@ a.link{color:#79b8ff}
     <div class="row">
       <div class="chip on" data-mode="practice" style="flex:1" onclick="pickMode(this,'practice')">
         練習模式<small>作答即顯示對錯＋正解</small></div>
+      <div class="chip" data-mode="drill" style="flex:1" onclick="pickMode(this,'drill')">
+        連續刷<small>不停出題，錯題加權重複</small></div>
       <div class="chip" data-mode="exam" style="flex:1" onclick="pickMode(this,'exam')">
         測驗模式<small>計時，最後一次結算</small></div>
     </div>
@@ -107,10 +109,13 @@ a.link{color:#79b8ff}
     </div>
     <div class="row" style="margin-top:10px">
       <span class="muted">題數：</span>
-      <div class="chip on" data-n="0" onclick="pickN(this,0)" style="flex:1">全部</div>
       <div class="chip" data-n="20" onclick="pickN(this,20)" style="flex:1">20</div>
       <div class="chip" data-n="40" onclick="pickN(this,40)" style="flex:1">40</div>
+      <div class="chip" data-n="60" onclick="pickN(this,60)" style="flex:1">60</div>
+      <div class="chip" data-n="100" onclick="pickN(this,100)" style="flex:1">100</div>
+      <div class="chip on" data-n="0" onclick="pickN(this,0)" style="flex:1">全部</div>
     </div>
+    <div class="muted" id="nNote" style="margin-top:7px;font-size:.82rem">「連續刷」模式會忽略題數、不停出題（答錯的會更常重複），按「結束」看統計。</div>
   </div>
 
   <button class="btn big" onclick="start()">開始練習 ▶</button>
@@ -207,25 +212,34 @@ function pickN(el,n){ limitN=n; [...el.parentNode.children].forEach(c=>c.classLi
 
 // ---- 出題 ----
 let pool=[], cur=0, answers=[], startTime=0, timerId=null;
+let drillCorrect=0, drillAnswered=0;   // 連續刷統計
 
 function shuffle(a){ a=a.slice(); for(let i=a.length-1;i>0;i--){const j=Math.random()*(i+1)|0;[a[i],a[j]]=[a[j],a[i]];} return a; }
+function mkItem(q){ let order=[0,1,2,3];
+  if(document.getElementById('shufO').checked) order=shuffle(order);
+  return {q, order, ansIdx:order.indexOf(q.ans-1), picked:null}; }
+function drillBatch(){           // 一批：全範圍洗牌，錯題本的題目再多放一次（加權）
+  const base=QUESTIONS.filter(scope.filter);
+  const wb=getWrongbook();
+  const extra=base.filter(q=>wb.has(q.id));
+  return shuffle(base.concat(extra)).map(mkItem);
+}
+const MODE_LABEL={practice:'練習模式',drill:'連續刷',exam:'測驗模式'};
 
 function start(){
   let qs=QUESTIONS.filter(scope.filter);
   if(qs.length===0){ alert('這個範圍目前沒有題目（錯題本可能是空的）。'); return; }
-  if(document.getElementById('shufQ').checked) qs=shuffle(qs);
-  if(limitN>0) qs=qs.slice(0,limitN);
-  const shufO=document.getElementById('shufO').checked;
-  pool=qs.map(q=>{
-    let order=[0,1,2,3];
-    if(shufO) order=shuffle(order);
-    return {q, order, ansIdx:order.indexOf(q.ans-1), picked:null};
-  });
+  if(mode==='drill'){
+    pool=drillBatch(); drillCorrect=0; drillAnswered=0;
+  } else {
+    if(document.getElementById('shufQ').checked) qs=shuffle(qs);
+    if(limitN>0) qs=qs.slice(0,limitN);
+    pool=qs.map(mkItem);
+  }
   answers=new Array(pool.length).fill(null);
   cur=0;
   show('quiz');
-  document.getElementById('qScope').textContent=scope.label+'（'+mode==='exam'?'測驗':'練習'+'）';
-  document.getElementById('qScope').textContent=scope.label+'　'+(mode==='exam'?'測驗模式':'練習模式');
+  document.getElementById('qScope').textContent=scope.label+'　'+(MODE_LABEL[mode]||'練習模式');
   if(mode==='exam'){ startTime=Date.now(); timerId=setInterval(updTimer,1000); updTimer(); }
   else { document.getElementById('timer').textContent=''; }
   render();
@@ -238,8 +252,15 @@ function updTimer(){
 
 function render(){
   const it=pool[cur], q=it.q;
-  document.getElementById('prog').style.width=((cur+1)/pool.length*100)+'%';
-  document.getElementById('qCount').textContent='第 '+(cur+1)+' / '+pool.length+' 題';
+  const isDrill=mode==='drill';
+  if(isDrill){
+    const acc=drillAnswered?Math.round(drillCorrect/drillAnswered*100):0;
+    document.getElementById('prog').style.width=acc+'%';
+    document.getElementById('qCount').textContent='已答 '+drillAnswered+' 題　✓'+drillCorrect+' ✗'+(drillAnswered-drillCorrect)+'　正確率 '+acc+'%';
+  } else {
+    document.getElementById('prog').style.width=((cur+1)/pool.length*100)+'%';
+    document.getElementById('qCount').textContent='第 '+(cur+1)+' / '+pool.length+' 題';
+  }
   document.getElementById('qYear').textContent=q.yr+' 年';
   document.getElementById('qCat').textContent=q.cat;
   const ctxEl=document.getElementById('qCtx');
@@ -249,11 +270,12 @@ function render(){
   document.getElementById('qStem').textContent=q.stem;
   const box=document.getElementById('qOpts'); box.innerHTML='';
   const labels=['A','B','C','D'];
+  const immediate = (mode==='practice'||mode==='drill');
   const answered = it.picked!==null;
   it.order.forEach((origIdx,pos)=>{
     const el=document.createElement('div'); el.className='opt';
     el.innerHTML='<div class="lab">'+labels[pos]+'</div><div>'+q.opts[origIdx]+'</div>';
-    if(mode==='practice' && answered){
+    if(immediate && answered){
       el.classList.add('dis');
       if(pos===it.ansIdx) el.classList.add('ok');
       else if(pos===it.picked) el.classList.add('no');
@@ -264,27 +286,42 @@ function render(){
     box.appendChild(el);
   });
   const fb=document.getElementById('qFb'); fb.innerHTML='';
-  if(mode==='practice' && answered){
+  if(immediate && answered){
     const ok=it.picked===it.ansIdx;
     fb.innerHTML='<div class="fb '+(ok?'ok':'no')+'">'+(ok?'✓ 答對！':'✗ 答錯　正解：'+labels[it.ansIdx])+'</div>';
   }
-  document.getElementById('prevBtn').disabled = cur===0;
+  document.getElementById('prevBtn').disabled = (cur===0)||(mode==='drill');
   const nb=document.getElementById('nextBtn');
-  nb.textContent = (cur===pool.length-1)?'交卷 ✅':'下一題 ›';
+  nb.textContent = (mode==='drill')?'下一題 ›':((cur===pool.length-1)?'交卷 ✅':'下一題 ›');
 }
 
 function pick(pos){
   const it=pool[cur];
-  if(mode==='practice'){
-    if(it.picked!==null) return;          // 練習模式作答後鎖定
+  if(mode==='practice'||mode==='drill'){
+    if(it.picked!==null) return;          // 作答後鎖定
     it.picked=pos; answers[cur]=pos;
-    if(it.picked!==it.ansIdx){ const wb=getWrongbook(); wb.add(it.q.id); saveWrongbook(wb); }
+    const ok=it.picked===it.ansIdx;
+    const wb=getWrongbook();
+    if(!ok){ wb.add(it.q.id); } else if(mode==='practice'){ /* 練習結算時再移除 */ }
+    if(!ok) saveWrongbook(wb);
+    if(mode==='drill'){
+      drillAnswered++; if(ok) drillCorrect++;
+      if(!ok){ // 答錯：稍後再考一次（加權重複）
+        const repeat=mkItem(it.q);
+        pool.splice(Math.min(cur+4,pool.length), 0, repeat);
+      }
+    }
     render();
   } else {
     it.picked=pos; answers[cur]=pos; render();   // 測驗模式可改
   }
 }
 function go(d){
+  if(mode==='drill'){
+    if(d<0) return;                       // 連續刷不回頭
+    if(cur>=pool.length-2) pool=pool.concat(drillBatch());  // 快用完就再續一批
+    cur++; render(); window.scrollTo(0,0); return;
+  }
   if(d>0 && cur===pool.length-1){ finish(); return; }
   cur=Math.max(0,Math.min(pool.length-1,cur+d)); render();
 }
@@ -301,20 +338,23 @@ function finish(){
   if(mode==='exam'){ const wb=getWrongbook();
     pool.forEach(it=>{ if(it.picked!==it.ansIdx) wb.add(it.q.id); else wb.delete(it.q.id); });
     saveWrongbook(wb);
-  } else { // 練習模式：答對的從錯題本移除
-    const wb=getWrongbook();
-    pool.forEach(it=>{ if(it.picked===it.ansIdx) wb.delete(it.q.id); });
+  } else { // 練習／連續刷：曾答錯的留在錯題本，只答對且從未錯過的移除
+    const wb=getWrongbook(); const everWrong=new Set();
+    pool.forEach(it=>{ if(it.picked!==null && it.picked!==it.ansIdx) everWrong.add(it.q.id); });
+    pool.forEach(it=>{ if(it.picked===it.ansIdx && !everWrong.has(it.q.id)) wb.delete(it.q.id); });
     saveWrongbook(wb);
   }
+  // 連續刷只計算已作答的；練習／測驗未作答者算錯
+  const graded = (mode==='drill') ? pool.filter(it=>it.picked!==null) : pool;
   let correct=0; const perCat={}; const catOrder=[];
-  pool.forEach(it=>{
+  graded.forEach(it=>{
     const ok=it.picked===it.ansIdx; if(ok)correct++;
     const c=it.q.cat; if(!perCat[c]){perCat[c]={t:0,c:0};catOrder.push(c);}
     perCat[c].t++; if(ok)perCat[c].c++;
   });
-  const total=pool.length, pct=Math.round(correct/total*100);
+  const total=graded.length, pct=total?Math.round(correct/total*100):0;
   document.getElementById('scoreNum').textContent=pct+'分';
-  let sub='答對 '+correct+' / '+total+' 題';
+  let sub=(mode==='drill'?'本次刷了 '+total+' 題，答對 '+correct:'答對 '+correct+' / '+total+' 題');
   if(mode==='exam'){ const s=Math.floor((Date.now()-startTime)/1000);
     sub+='　用時 '+Math.floor(s/60)+'分'+(s%60)+'秒'; }
   document.getElementById('scoreSub').textContent=sub;
@@ -324,8 +364,10 @@ function finish(){
     cs.innerHTML+='<div class="statline"><span>'+c+'</span><span>'+o.c+'/'+o.t+'　'+p+'%</span></div>'+
       '<div class="bar"><i style="width:'+p+'%;background:'+(p>=80?'var(--ok)':p>=60?'var(--warn)':'var(--no)')+'"></i></div>';
   });
-  // 錯題檢討
-  const wrong=pool.filter(it=>it.picked!==it.ansIdx);
+  // 錯題檢討（連續刷會有重複題，依題目去重）
+  const seen=new Set();
+  const wrong=graded.filter(it=>{ if(it.picked===it.ansIdx) return false;
+    if(seen.has(it.q.id)) return false; seen.add(it.q.id); return true; });
   document.getElementById('wrongCount').textContent=wrong.length+' 題';
   document.getElementById('redoWrong').disabled = wrong.length===0;
   const rl=document.getElementById('reviewList'); rl.innerHTML='';
@@ -348,12 +390,11 @@ function finish(){
 
 let lastWrongIds=null;
 function redoWrong(){
-  const wrong=pool.filter(it=>it.picked!==it.ansIdx).map(it=>it.q.id);
+  const wrong=pool.filter(it=>it.picked!==null && it.picked!==it.ansIdx).map(it=>it.q.id);
   if(wrong.length===0)return;
   const set=new Set(wrong);
   scope={key:'redo',label:'本次錯題',filter:q=>set.has(q.id)};
-  // 強制不裁切題數
-  limitN=0;
+  mode='practice'; limitN=0;            // 重做錯題用練習模式，做完即結算
   document.getElementById('shufQ').checked=true;
   start();
 }
