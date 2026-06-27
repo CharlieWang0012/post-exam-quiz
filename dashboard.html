@@ -62,6 +62,19 @@ td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
         <th class="num" data-k="best">最佳</th>
         <th data-k="last">最近活動</th>
       </tr></thead><tbody></tbody></table>
+      <div class="muted" style="margin-top:6px">💡 點任一列可看該成員的個人表現</div>
+    </div>
+
+    <div class="card">
+      <h2>👤 個人表現</h2>
+      <div class="row">
+        <span class="muted">選擇成員：</span>
+        <select id="memberSel" class="btn" onchange="showMember(this.value)">
+          <option value="">— 請選擇 —</option>
+        </select>
+        <button class="btn" id="clearMember" style="display:none" onclick="showMember('')">✕ 清除</button>
+      </div>
+      <div id="memberDetail" style="margin-top:14px"></div>
     </div>
 
     <div class="card">
@@ -152,11 +165,20 @@ function render(){
       return (x-y)*sortDir; });
     document.querySelector('#board tbody').innerHTML=board.map(b=>{
       const col=b.avg>=80?'var(--ok)':b.avg>=60?'var(--warn)':'var(--no)';
-      return '<tr><td>'+esc(b.nick)+'</td><td class="num">'+b.sessions+'</td><td class="num">'+b.answered+
+      return '<tr data-nick="'+escAttr(b.nick)+'" style="cursor:pointer"><td>'+esc(b.nick)+'</td><td class="num">'+b.sessions+'</td><td class="num">'+b.answered+
         '</td><td class="num" style="color:'+col+'">'+b.avg+'%</td><td class="num">'+b.best+'%</td><td>'+fmt(b.last)+'</td></tr>';
     }).join('');
+    document.querySelectorAll('#board tbody tr').forEach(tr=>tr.onclick=()=>{
+      const sel=document.getElementById('memberSel'); sel.value=tr.dataset.nick; showMember(tr.dataset.nick);
+      document.getElementById('memberDetail').scrollIntoView({behavior:'smooth',block:'center'});
+    });
   }
   drawBoard();
+
+  // 個人下拉選單
+  const sel=document.getElementById('memberSel');
+  const names=[...new Set(rows.map(r=>r.nick))].sort();
+  sel.innerHTML='<option value="">— 請選擇 —</option>'+names.map(n=>'<option value="'+escAttr(n)+'">'+esc(n)+'</option>').join('');
   document.querySelectorAll('#board th').forEach(th=>th.onclick=()=>{
     const k=th.dataset.k; if(k===sortK)sortDir*=-1; else{sortK=k;sortDir=(k==='nick'||k==='last')?1:-1;} drawBoard();
   });
@@ -182,6 +204,43 @@ function render(){
       '分</td><td class="num">'+(r.correct||0)+'/'+(r.total||0)+'</td></tr>';
   }).join('');
 }
+function showMember(nick){
+  const box=document.getElementById('memberDetail');
+  const clr=document.getElementById('clearMember');
+  if(!nick){ box.innerHTML=''; box.style.display='none'; clr.style.display='none';
+    document.getElementById('memberSel').value=''; return; }
+  clr.style.display=''; box.style.display='';
+  const list=rows.filter(r=>r.nick===nick).sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
+  const answered=list.reduce((s,r)=>s+(r.total||0),0);
+  const cor=list.reduce((s,r)=>s+(r.correct||0),0);
+  const avg=answered?Math.round(cor/answered*100):0;
+  const best=Math.max(...list.map(r=>r.pct||0));
+  const first=list.reduce((m,r)=>(!m||r.ts<m)?r.ts:m,'');
+  const last=list.length?list[0].ts:'';
+  // 個人各科
+  const cat={};
+  list.forEach(r=>{ let c={}; try{c=JSON.parse(r.cats||'{}');}catch(e){}
+    for(const k in c){ cat[k]=cat[k]||{t:0,c:0}; cat[k].t+=c[k].t||0; cat[k].c+=c[k].c||0; } });
+  const cats=Object.entries(cat).map(([k,v])=>({k,t:v.t,p:v.t?Math.round(v.c/v.t*100):0})).sort((a,b)=>a.p-b.p);
+  const kpi=[['練習場次',list.length],['總作答',answered],['平均正確率',avg+'%'],['最佳',best+'%']];
+  let h='<div class="cards">'+kpi.map(k=>'<div class="kpi"><div class="n">'+k[1]+'</div><div class="l">'+k[0]+'</div></div>').join('')+'</div>';
+  h+='<div class="muted" style="margin:2px 0 10px">📅 '+fmt(first)+' ～ '+fmt(last)+'（共 '+list.length+' 次）</div>';
+  // 各科弱點（個人）
+  h+='<h2 style="font-size:.98rem">🎯 '+esc(nick)+' 的各科表現（由弱到強）</h2>';
+  if(cats.length){ h+='<table><thead><tr><th>科目／類別</th><th class="num">作答</th><th class="num">正確率</th><th style="width:40%">　</th></tr></thead><tbody>';
+    cats.forEach(c=>{ const col=c.p>=80?'var(--ok)':c.p>=60?'var(--warn)':'var(--no)';
+      h+='<tr><td>'+esc(c.k)+'</td><td class="num">'+c.t+'</td><td class="num" style="color:'+col+'">'+c.p+'%</td><td><div class="bar"><i style="width:'+c.p+'%;background:'+col+'"></i></div></td></tr>'; });
+    h+='</tbody></table>';
+  } else h+='<div class="muted">（無分類資料）</div>';
+  // 歷次作答
+  h+='<h2 style="font-size:.98rem;margin-top:16px">🕑 '+esc(nick)+' 的歷次作答</h2>';
+  h+='<table><thead><tr><th>時間</th><th>範圍</th><th>模式</th><th class="num">分數</th><th class="num">題數</th></tr></thead><tbody>';
+  h+=list.map(r=>{ const col=(r.pct||0)>=80?'var(--ok)':(r.pct||0)>=60?'var(--warn)':'var(--no)';
+    return '<tr><td>'+fmt(r.ts)+'</td><td><span class="pill">'+esc(r.scope||'')+'</span></td><td>'+(MODE[r.mode]||r.mode||'')+'</td><td class="num" style="color:'+col+'">'+(r.pct||0)+'分</td><td class="num">'+(r.correct||0)+'/'+(r.total||0)+'</td></tr>'; }).join('');
+  h+='</tbody></table>';
+  box.innerHTML=h;
+}
+function escAttr(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
 function esc(s){ return (s||'').replace(/</g,'&lt;'); }
 function fmt(iso){ if(!iso)return''; const d=new Date(iso); if(isNaN(d))return esc(iso);
   return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
