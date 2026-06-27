@@ -78,6 +78,16 @@ h1{font-size:1.35rem;margin:.2em 0 .1em}
 a.link{color:#79b8ff}
 .footer{color:var(--sub);font-size:.8rem;text-align:center;margin-top:30px}
 .kbd{background:var(--card2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:.82rem}
+details.help{background:var(--card);border:1px solid var(--accent);border-radius:14px;padding:0 18px;margin:14px 0}
+details.help summary{cursor:pointer;list-style:none;padding:15px 0;font-weight:700;color:#bcd4ff}
+details.help summary::-webkit-details-marker{display:none}
+details.help summary::before{content:'▸ ';color:var(--accent)}
+details.help[open] summary::before{content:'▾ '}
+details.help .body{padding:2px 0 16px;font-size:.95rem;line-height:1.85;color:#cdd9e6}
+details.help h4{margin:14px 0 4px;font-size:.95rem;color:var(--txt)}
+details.help .pill{display:inline-block;background:var(--card2);border:1px solid var(--line);
+  border-radius:8px;padding:1px 8px;margin:1px 2px;font-size:.86rem}
+details.help b{color:#fff}
 </style>
 </head>
 <body>
@@ -87,6 +97,33 @@ a.link{color:#79b8ff}
 <section id="home">
   <h1>📮 中華郵政甄試 · 選擇題練習</h1>
   <div class="muted">專業職(一)程式設計｜郵政三法・金融科技・國文・英文｜112–114 年共 285 題官方真題（含正解）</div>
+
+  <details class="help">
+    <summary>❓ 第一次來？點我看「怎麼用」</summary>
+    <div class="body">
+      <b>三步驟就能開始：</b>填暱稱（選填）→ 選範圍 → 選模式 → 按「開始練習」。
+
+      <h4>① 填暱稱</h4>
+      想讓出題者看到你的成績就填；不填也能練，只是成績只留在自己手機、不上傳。
+
+      <h4>② 選範圍（要練哪些題）</h4>
+      <span class="pill">某一科</span>哪科弱就單練那科（郵政法／儲金匯兌法／簡易壽險法／金融科技／國文／英文）。
+      <span class="pill">某一年</span>114／113／112＝那年一整份選擇題，拿來模擬。
+      <span class="pill">全部</span>總複習、衝量。
+      <span class="pill">★錯題本</span>自動收集你答錯的題，考前專刷它（要先做過才有內容）。
+
+      <h4>③ 選模式（怎麼練）</h4>
+      <b>練習</b>：作答馬上看對錯＋正解，適合一邊學。<br>
+      <b>連續刷</b>：不停出題、<b>答錯的會一直回來</b>，適合大量重複、建立記憶。<br>
+      <b>測驗</b>：計時、最後一次結算，適合模擬考試。
+
+      <h4>④ 作答後</h4>
+      會看到分數、各科正確率、<b>錯題檢討</b>（你選的 vs 正解），可一鍵「重做本次錯題」。
+
+      <h4>🎯 建議節奏</h4>
+      平常 <b>分科＋練習</b> → 想衝量 <b>郵政三法／金融科技＋連續刷</b> → 驗收 <b>選某年＋測驗</b> → 考前 <b>刷錯題本</b>。
+    </div>
+  </details>
 
   <div class="card">
     <label class="muted" for="nick" style="display:block;margin-bottom:6px">👤 你的暱稱（讓出題者看得到你的練習成績）</label>
