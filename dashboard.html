@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>成績儀表板 · 中華郵政甄試刷題</title>
+<style>
+:root{--bg:#0f1720;--card:#16212e;--card2:#1d2a3a;--line:#2b3a4d;--txt:#e6edf3;
+  --sub:#9fb0c3;--accent:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--no:#ef4444;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);
+  font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;line-height:1.7}
+.wrap{max-width:920px;margin:0 auto;padding:20px 16px 60px}
+h1{font-size:1.4rem;margin:.2em 0}
+.muted{color:var(--sub);font-size:.88rem}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin:16px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.kpi .n{font-size:1.9rem;font-weight:800}
+.kpi .l{color:var(--sub);font-size:.85rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin:16px 0}
+h2{font-size:1.05rem;margin:.2em 0 .6em}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line)}
+th{color:var(--sub);font-weight:600;font-size:.82rem;cursor:pointer;user-select:none}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+.bar{height:7px;background:var(--card2);border-radius:6px;overflow:hidden;margin-top:4px}
+.bar>i{display:block;height:100%}
+.btn{border:1px solid var(--line);background:var(--card2);color:var(--txt);border-radius:9px;
+  padding:8px 14px;font-size:.92rem;cursor:pointer;font-family:inherit}
+.btn:hover{border-color:var(--accent)}
+.pill{display:inline-block;background:var(--card2);border:1px solid var(--line);border-radius:20px;
+  padding:1px 9px;font-size:.78rem;color:var(--sub)}
+.center{text-align:center}
+.err{color:var(--no)}
+.note{background:#1a2433;border:1px solid var(--line);border-left:3px solid var(--warn);
+  border-radius:8px;padding:10px 13px;font-size:.84rem;color:#cdd9e6;margin:10px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="row" style="justify-content:space-between">
+    <h1>📊 成績儀表板</h1>
+    <button class="btn" onclick="load()">↻ 重新整理</button>
+  </div>
+  <div class="muted">中華郵政甄試刷題練習｜資料來源：朋友作答上傳　<span id="updated"></span></div>
+  <div class="note">🔒 這是給出題者看的私人頁面，連結請勿外傳。資料為各人自填暱稱與練習成績。</div>
+
+  <div id="status" class="card center muted">載入中…</div>
+
+  <div id="dash" style="display:none">
+    <div class="cards" id="kpis"></div>
+
+    <div class="card">
+      <h2>🏆 朋友排行榜</h2>
+      <div class="muted" style="margin-bottom:6px">點欄位標題可排序</div>
+      <table id="board"><thead><tr>
+        <th data-k="nick">暱稱</th>
+        <th class="num" data-k="sessions">場次</th>
+        <th class="num" data-k="answered">總作答</th>
+        <th class="num" data-k="avg">平均正確率</th>
+        <th class="num" data-k="best">最佳</th>
+        <th data-k="last">最近活動</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>🎯 各科弱點（所有人合計，由弱到強）</h2>
+      <table id="cats"><thead><tr>
+        <th>科目／類別</th><th class="num">總作答</th><th class="num">正確率</th><th style="width:38%">　</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="card">
+      <h2>🕑 最近練習場次</h2>
+      <table id="recent"><thead><tr>
+        <th>時間</th><th>暱稱</th><th>範圍</th><th>模式</th><th class="num">分數</th><th class="num">題數</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+  </div>
+</div>
+<script>
+const FB_PROJECT='my-teaching-tools-402d3';
+const FB_KEY='AIzaSyAuQVXT_vBZCqDSW70caliz0MTp0M_midU';
+const BASE='https://firestore.googleapis.com/v1/projects/'+FB_PROJECT+'/databases/(default)/documents/post_quiz_results';
+const MODE={practice:'練習',drill:'連續刷',exam:'測驗'};
+
+function fval(v){ if(!v)return null;
+  if('stringValue'in v)return v.stringValue;
+  if('integerValue'in v)return +v.integerValue;
+  if('doubleValue'in v)return v.doubleValue;
+  return null; }
+function parseDoc(d){ const f=d.fields||{}; const o={}; for(const k in f)o[k]=fval(f[k]); return o; }
+
+let rows=[];
+async function load(){
+  document.getElementById('status').style.display='';
+  document.getElementById('status').className='card center muted';
+  document.getElementById('status').textContent='載入中…';
+  document.getElementById('dash').style.display='none';
+  try{
+    let docs=[], token='';
+    do{
+      const url=BASE+'?key='+FB_KEY+'&pageSize=300'+(token?('&pageToken='+token):'');
+      const r=await fetch(url); if(!r.ok)throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      (j.documents||[]).forEach(d=>docs.push(parseDoc(d)));
+      token=j.nextPageToken||'';
+    }while(token);
+    rows=docs.filter(d=>d.nick);
+    render();
+  }catch(e){
+    document.getElementById('status').className='card center err';
+    document.getElementById('status').textContent='載入失敗：'+e.message;
+  }
+}
+
+function render(){
+  document.getElementById('updated').textContent='（更新於 '+new Date().toLocaleString('zh-TW')+'）';
+  if(rows.length===0){
+    document.getElementById('status').textContent='目前還沒有任何上傳的成績。請朋友填暱稱後練習。';
+    return;
+  }
+  document.getElementById('status').style.display='none';
+  document.getElementById('dash').style.display='';
+
+  // KPI
+  const friends=new Set(rows.map(r=>r.nick));
+  const totalAns=rows.reduce((s,r)=>s+(r.total||0),0);
+  const totalCor=rows.reduce((s,r)=>s+(r.correct||0),0);
+  const kp=[['朋友人數',friends.size],['練習場次',rows.length],
+    ['總作答題數',totalAns],['整體正確率',(totalAns?Math.round(totalCor/totalAns*100):0)+'%']];
+  document.getElementById('kpis').innerHTML=kp.map(k=>
+    '<div class="kpi"><div class="n">'+k[1]+'</div><div class="l">'+k[0]+'</div></div>').join('');
+
+  // 排行榜（依暱稱彙總）
+  const byNick={};
+  rows.forEach(r=>{ const n=r.nick; (byNick[n]=byNick[n]||[]).push(r); });
+  let board=Object.entries(byNick).map(([nick,list])=>{
+    const sessions=list.length;
+    const answered=list.reduce((s,r)=>s+(r.total||0),0);
+    const cor=list.reduce((s,r)=>s+(r.correct||0),0);
+    const avg=answered?Math.round(cor/answered*100):0;
+    const best=Math.max(...list.map(r=>r.pct||0));
+    const last=list.reduce((m,r)=>r.ts>m?r.ts:m,'');
+    return {nick,sessions,answered,avg,best,last};
+  });
+  let sortK='avg',sortDir=-1;
+  function drawBoard(){
+    board.sort((a,b)=>{ let x=a[sortK],y=b[sortK];
+      if(typeof x==='string'){return x<y?-sortDir:x>y?sortDir:0;}
+      return (x-y)*sortDir; });
+    document.querySelector('#board tbody').innerHTML=board.map(b=>{
+      const col=b.avg>=80?'var(--ok)':b.avg>=60?'var(--warn)':'var(--no)';
+      return '<tr><td>'+esc(b.nick)+'</td><td class="num">'+b.sessions+'</td><td class="num">'+b.answered+
+        '</td><td class="num" style="color:'+col+'">'+b.avg+'%</td><td class="num">'+b.best+'%</td><td>'+fmt(b.last)+'</td></tr>';
+    }).join('');
+  }
+  drawBoard();
+  document.querySelectorAll('#board th').forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; if(k===sortK)sortDir*=-1; else{sortK=k;sortDir=(k==='nick'||k==='last')?1:-1;} drawBoard();
+  });
+
+  // 各科弱點
+  const cat={};
+  rows.forEach(r=>{ let c={}; try{c=JSON.parse(r.cats||'{}');}catch(e){}
+    for(const k in c){ cat[k]=cat[k]||{t:0,c:0}; cat[k].t+=c[k].t||0; cat[k].c+=c[k].c||0; } });
+  const cats=Object.entries(cat).map(([k,v])=>({k,t:v.t,p:v.t?Math.round(v.c/v.t*100):0}))
+    .sort((a,b)=>a.p-b.p);
+  document.querySelector('#cats tbody').innerHTML=cats.map(c=>{
+    const col=c.p>=80?'var(--ok)':c.p>=60?'var(--warn)':'var(--no)';
+    return '<tr><td>'+esc(c.k)+'</td><td class="num">'+c.t+'</td><td class="num" style="color:'+col+'">'+c.p+
+      '%</td><td><div class="bar"><i style="width:'+c.p+'%;background:'+col+'"></i></div></td></tr>';
+  }).join('');
+
+  // 最近場次
+  const recent=rows.slice().sort((a,b)=>(b.ts||'').localeCompare(a.ts||'')).slice(0,30);
+  document.querySelector('#recent tbody').innerHTML=recent.map(r=>{
+    const col=(r.pct||0)>=80?'var(--ok)':(r.pct||0)>=60?'var(--warn)':'var(--no)';
+    return '<tr><td>'+fmt(r.ts)+'</td><td>'+esc(r.nick)+'</td><td><span class="pill">'+esc(r.scope||'')+
+      '</span></td><td>'+(MODE[r.mode]||r.mode||'')+'</td><td class="num" style="color:'+col+'">'+(r.pct||0)+
+      '分</td><td class="num">'+(r.correct||0)+'/'+(r.total||0)+'</td></tr>';
+  }).join('');
+}
+function esc(s){ return (s||'').replace(/</g,'&lt;'); }
+function fmt(iso){ if(!iso)return''; const d=new Date(iso); if(isNaN(d))return esc(iso);
+  return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+load();
+</script>
+</body>
+</html>
